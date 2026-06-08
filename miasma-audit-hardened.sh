@@ -181,12 +181,15 @@ report ""
 # 1. Discover JS projects
 # -----------------------------------------------------------------------------
 PROJECTS=()
+# Portable across GNU and BSD/macOS find: -print the manifest, then strip the
+# filename to get its directory (the GNU-only `-printf '%h'` is unsupported on
+# macOS and would make the whole scan emit nothing -> "Found 0 ...").
 while IFS= read -r d; do PROJECTS+=("$d"); done < <(
   find "$ROOT" "${SKIP_OUT[@]}" \
     -type d \( -name node_modules -o -name .git -o -name dist -o -name build \) -prune -false \
     -o -type f \( -name package.json -o -name package-lock.json \
                   -o -name pnpm-lock.yaml -o -name yarn.lock \) \
-    -printf '%h\n' 2>/dev/null | sort -u
+    -print 2>/dev/null | sed 's#/[^/]*$##' | sort -u
 )
 report "Found ${#PROJECTS[@]} possible JS project(s)."
 report ""
