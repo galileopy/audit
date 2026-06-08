@@ -51,6 +51,50 @@ to the scripts** by default. Reports are plain text:
 grep -E '\[!!\]|\[!\]' miasma-shaihulud-audit-*/report.txt
 ```
 
+## Run without cloning (curl | bash)
+
+> [!WARNING]
+> Piping a remote script straight into a shell is the **exact pattern this tool
+> exists to detect**. Whatever the URL serves runs immediately, unreviewed, with
+> your privileges — a tampered repo, a hijacked CDN, or a MITM all become code
+> execution. On a machine you already suspect is compromised, prefer the
+> **download → inspect → run** flow below.
+
+**Safer: download, read, then run.**
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/galileopy/audit/main/miasma-audit-hardened.sh
+less miasma-audit-hardened.sh        # eyeball it first
+bash miasma-audit-hardened.sh --offline ~/code
+```
+
+**Convenience one-liners** (note: `bash`, not `sh` — these use bash features;
+and pass flags/args after `-s --`):
+
+```bash
+# main on-host audit
+curl -fsSL https://raw.githubusercontent.com/galileopy/audit/main/miasma-audit-hardened.sh | bash
+
+# with flags / a scan root
+curl -fsSL https://raw.githubusercontent.com/galileopy/audit/main/miasma-audit-hardened.sh | bash -s -- --offline --copy-evidence ~/code
+
+# persistence scan
+curl -fsSL https://raw.githubusercontent.com/galileopy/audit/main/miasma-persistence-scan.sh | bash
+
+# npm supply-chain scan
+curl -fsSL https://raw.githubusercontent.com/galileopy/audit/main/miasma-npm-supplychain-scan.sh | bash
+```
+
+When piped this way there is no script file on disk, so output is written under
+the **current directory** by default (override with `MIASMA_OUT_DIR`).
+
+`run-all.sh` **cannot** be piped — it runs the three sibling scripts by path, so
+it needs them on disk. To use the runner, clone the repo:
+
+```bash
+git clone https://github.com/galileopy/audit.git && cd audit && ./run-all.sh
+```
+
 ## Options & environment
 
 | Flag | Equivalent env var | Effect |

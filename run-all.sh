@@ -7,7 +7,14 @@
 
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# run-all needs the sibling scripts on disk, so it cannot be piped (curl | bash);
+# clone the repo to use it. Resolve our directory, falling back to $PWD.
+SRC="${BASH_SOURCE[0]:-}"
+if [ -n "$SRC" ] && [ -f "$SRC" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SRC")" && pwd)"
+else
+  SCRIPT_DIR="$PWD"
+fi
 OUTBASE="${MIASMA_OUT_DIR:-$SCRIPT_DIR}"
 
 SCANS=(

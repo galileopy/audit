@@ -13,7 +13,14 @@
 
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve our own directory; fall back to $PWD when piped in (curl | bash),
+# where there is no script file on disk.
+SRC="${BASH_SOURCE[0]:-}"
+if [ -n "$SRC" ] && [ -f "$SRC" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SRC")" && pwd)"
+else
+  SCRIPT_DIR="$PWD"
+fi
 
 usage() {
   cat <<EOF
