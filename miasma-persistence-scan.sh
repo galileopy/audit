@@ -121,7 +121,7 @@ echo "(read-only: this script does not modify, remove, or rotate anything)"
 echo "(evidence copying is opt-in: set COPY_EVIDENCE=1 to preserve flagged files)"
 echo
 report "=== Miasma / Shai-Hulud persistence scan (read-only) ==="
-report "Started: $(date -Is)"
+report "Started: $(date '+%Y-%m-%dT%H:%M:%S%z')"
 report "Root: $ROOT"
 [ "$HAVE_CRONTAB" = "1" ] || report "[i] crontab not on PATH; user crontab not read (system cron still scanned)."
 report ""

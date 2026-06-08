@@ -110,7 +110,7 @@ echo "(read-only: this script does not modify, remove, or rotate anything)"
 echo "(evidence copying is opt-in: set COPY_EVIDENCE=1 to preserve flagged files)"
 echo
 report "=== Miasma / Shai-Hulud npm supply-chain scan (read-only) ==="
-report "Started: $(date -Is)"
+report "Started: $(date '+%Y-%m-%dT%H:%M:%S%z')"
 report "Root: $ROOT"
 miss=""
 [ "$HAVE_JQ" = "1" ]  || miss="$miss jq"

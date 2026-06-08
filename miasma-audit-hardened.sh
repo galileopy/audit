@@ -167,7 +167,7 @@ affected_resolved() {
 }
 
 report "=== Miasma / Shai-Hulud defensive audit (read-only) ==="
-report "Started: $(date -Is)"
+report "Started: $(date '+%Y-%m-%dT%H:%M:%S%z')"
 report "Root: $ROOT"
 miss=""
 [ "$HAVE_JQ" = "1" ]   || miss="$miss jq"
