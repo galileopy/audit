@@ -380,28 +380,52 @@ for tmp in "${TMPDIR:-/tmp}" /tmp /var/tmp; do
   while IFS= read -r f; do
     report "[!] Possible staged Bun runtime: $f"
     copy_evidence "$f"
-  done < <(find "$tmp" -maxdepth 2 -type f -name 'bun*' 2>/dev/null)
+  done < <(find "$tmp" -maxdepth 2 "${SKIP_OUT[@]}" -type f -name 'bun*' -print 2>/dev/null)
   while IFS= read -r f; do
     report "[!] Suspicious kitty daemon path: $f"
-  done < <(find "$tmp" -maxdepth 2 -name 'kitty-*' 2>/dev/null)
+  done < <(find "$tmp" -maxdepth 2 "${SKIP_OUT[@]}" -name 'kitty-*' -print 2>/dev/null)
 done
 report ""
 
 # -----------------------------------------------------------------------------
-# 6. Claude settings hooks (SessionStart persistence)
+# 6. Claude config & settings: hooks (esp. SessionStart) and MCP servers.
+#    Covers user-global, per-project, *.local variants, ~/.claude.json, project
+#    .mcp.json, and enterprise managed settings. Tiered: a worm marker -> [!!];
+#    a hook/MCP command that fetches or executes -> [!]; a hook/MCP merely
+#    configured -> [i]. These files routinely hold SECRETS, so they are copied
+#    only with COPY_EVIDENCE=1 and never for an [i].
 # -----------------------------------------------------------------------------
-report "=== Claude settings hook check ==="
-CLAUDE_FILES=("$HOME/.claude/settings.json")
-while IFS= read -r f; do CLAUDE_FILES+=("$f"); done \
-  < <(find "$ROOT" "${SKIP_OUT[@]}" -path "*/.claude/settings.json" -type f -print 2>/dev/null)
+report "=== Claude config / settings hook check ==="
+# Hook event names + MCP server config: presence alone is informational.
+CLAUDE_PRESENT_RE='"hooks"|"SessionStart"|"PreToolUse"|"PostToolUse"|"UserPromptSubmit"|"Stop"|"SubagentStop"|"Notification"|"PreCompact"|"mcpServers"'
+# A hook/MCP command that fetches or executes is the real tell.
+CLAUDE_DROPPER_RE='curl |wget |/dev/tcp/|base64 -d|base64 --decode|node -e|node --eval|bun |setup\.mjs|setup\.js'
+CLAUDE_FILES=(
+  "$HOME/.claude.json"
+  "$HOME/.claude/settings.json"
+  "$HOME/.claude/settings.local.json"
+  /etc/claude-code/managed-settings.json
+)
+while IFS= read -r f; do CLAUDE_FILES+=("$f"); done < <(
+  find "$ROOT" "${SKIP_OUT[@]}" \
+    \( -path "*/.claude/settings.json" -o -path "*/.claude/settings.local.json" \
+       -o -path "*/.mcp.json" \) -type f -print 2>/dev/null)
+declare -A seen_claude=()
 for f in "${CLAUDE_FILES[@]}"; do
   [ -f "$f" ] || continue
-  # High-signal first; the broad node/curl/etc. patterns are advisory only.
-  if grep -Eqs '"SessionStart"|"hooks"|setup\.mjs|setup\.js|curl |wget ' "$f"; then
-    report "[!] Review Claude hook/settings file (may contain SECRETS): $f"
+  [ -n "${seen_claude[$f]:-}" ] && continue
+  seen_claude[$f]=1
+  if grep -EqsI "$MARKERS" "$f" 2>/dev/null; then
+    report "[!!] Worm marker in Claude config (may contain SECRETS): $f"
     copy_evidence "$f"
-    grep -Ens '"SessionStart"|"hooks"|"command"|setup\.mjs|setup\.js|curl |wget ' "$f" \
-      | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
+    grep -EnsI "$MARKERS" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
+  elif grep -EqsI "$CLAUDE_DROPPER_RE" "$f" 2>/dev/null; then
+    report "[!] Claude hook/MCP command fetches or executes — review (may contain SECRETS): $f"
+    copy_evidence "$f"
+    grep -EnsI "$CLAUDE_DROPPER_RE|\"command\"" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
+  elif grep -EqsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null; then
+    report "[i] Hooks/MCP configured here — confirm you added them: $f"
+    grep -EnsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
   fi
 done
 report ""
