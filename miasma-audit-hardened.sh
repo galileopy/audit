@@ -361,7 +361,7 @@ report ""
 # -----------------------------------------------------------------------------
 report "=== Worm marker-string scan ==="
 while IFS= read -r m; do
-  report "[!] Marker string match: $m"
+  report "[!!] Marker string match: $m"
   echo "$m" >> "$OUT/marker-matches.txt"
 done < <(grep -rIlE "$MARKERS" "$ROOT" \
            --exclude-dir='miasma-shaihulud-audit-*' \

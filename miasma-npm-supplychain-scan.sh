@@ -176,7 +176,7 @@ while IFS= read -r rc; do
     report "[!] $rc contains an inline npm credential — rotate from a clean device."
     report "      (token value intentionally not copied to evidence)"
   fi
-done < <({ printf '%s\n' "$HOME/.npmrc"; find "$ROOT" -maxdepth 4 -name '.npmrc' -type f 2>/dev/null; } | sort -u)
+done < <({ printf '%s\n' "$HOME/.npmrc"; find "$ROOT" -maxdepth 4 "${SKIP_OUT[@]}" -name '.npmrc' -type f -print 2>/dev/null; } | sort -u)
 report ""
 
 # -----------------------------------------------------------------------------
@@ -199,7 +199,7 @@ while IFS= read -r groot; do
   for pkg in "${AFFECTED_PKGS[@]}"; do
     while IFS= read -r d; do
       report "[!] Affected package installed globally: $pkg -> $d"
-    done < <(find "$groot" -maxdepth 3 -type d -path "*/$pkg" 2>/dev/null)
+    done < <(find "$groot" -maxdepth 3 "${SKIP_OUT[@]}" -type d -path "*/$pkg" -print 2>/dev/null)
   done
 done < <(printf '%s\n' "${GLOBAL_ROOTS[@]}" | sort -u)
 report ""

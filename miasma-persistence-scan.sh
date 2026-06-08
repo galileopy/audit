@@ -140,7 +140,7 @@ done
 # Anything sourced from ~/.bashrc.d or ~/.profile.d style drop-in dirs.
 while IFS= read -r f; do scan_file "$f" "shell rc drop-in"; done < <(
   find "$HOME"/.bashrc.d "$HOME"/.profile.d "$HOME"/.config/fish/conf.d \
-    -type f 2>/dev/null)
+    "${SKIP_OUT[@]}" -type f -print 2>/dev/null)
 report ""
 
 # -----------------------------------------------------------------------------
@@ -162,7 +162,7 @@ if [ "$HAVE_CRONTAB" = "1" ]; then
 fi
 while IFS= read -r f; do scan_file "$f" "cron"; done < <(
   find /etc/cron.d /etc/cron.hourly /etc/cron.daily /etc/cron.weekly \
-       /etc/cron.monthly /var/spool/cron -type f 2>/dev/null)
+       /etc/cron.monthly /var/spool/cron "${SKIP_OUT[@]}" -type f -print 2>/dev/null)
 scan_file /etc/crontab "cron"
 report ""
 
@@ -174,7 +174,7 @@ while IFS= read -r f; do
   # An ExecStart pointing at curl/node/bun or a temp path is the extra tell.
   scan_file "$f" "systemd user unit" 'ExecStart=.*(curl|wget|/tmp/|node |bun )'
 done < <(find "$HOME/.config/systemd/user" "$HOME/.local/share/systemd/user" \
-              -type f \( -name '*.service' -o -name '*.timer' \) 2>/dev/null)
+              "${SKIP_OUT[@]}" -type f \( -name '*.service' -o -name '*.timer' \) -print 2>/dev/null)
 report ""
 
 # -----------------------------------------------------------------------------
