@@ -14,7 +14,7 @@ can trigger retaliation (e.g. wiping `$HOME`).
 | Script | What it checks |
 |---|---|
 | `run-all.sh` | Runs all three scans below, tees a combined log, exits with the worst result code |
-| `miasma-audit-hardened.sh` | Affected packages/versions (lockfile-resolved), `npm ls`, registry publish-dates, node_modules implants, worm marker strings, Claude/VS Code hooks, GitHub workflows, local git history |
+| `miasma-audit-hardened.sh` | Affected packages/versions (lockfile-resolved), `npm ls`, registry publish-dates, node_modules implants, worm marker strings, Claude config & hooks (incl. `~/.claude.json`, `settings.local`, project `.mcp.json`, MCP servers, managed settings), VS Code tasks, GitHub workflows, local git history |
 | `miasma-persistence-scan.sh` | Shell startup files, cron, systemd user units, git hooks |
 | `miasma-npm-supplychain-scan.sh` | `package.json` lifecycle scripts, `~/.npmrc`, global / nvm `node_modules` |
 
@@ -129,7 +129,8 @@ for routine sweeps.
 
 ## Requirements
 
-`bash` 4+, `find`, `grep`. Optional but recommended: `jq` (authoritative version
-resolution), `npm` (`npm ls` + registry date check), `git` (history check). A
-missing tool degrades the relevant check to an explicit `[i] skipped`, never a
-silent pass.
+Required: `bash` 4+, `find`, `grep`. Optional but recommended: `jq` (authoritative
+version resolution), `npm` (`npm ls` + registry date check), `git` (history
+check), `stat` (file sizes for the `binding.gyp` / `index.js` heuristics). A
+missing tool degrades the relevant check to an explicit `[i] skipped` and is
+listed at the top of the report — never a silent pass.
