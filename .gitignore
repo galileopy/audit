@@ -1,0 +1,6 @@
+# Scan outputs (written next to the scripts by default) — never commit these:
+# they can contain secrets and live payloads.
+miasma-shaihulud-audit-*/
+miasma-persistence-*/
+miasma-npm-supplychain-*/
+miasma-run-all-*.log
