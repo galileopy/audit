@@ -366,12 +366,22 @@ report "=== Worm marker-string scan ==="
 while IFS= read -r m; do
   report "[!!] Marker string match: $m"
   echo "$m" >> "$OUT/marker-matches.txt"
-done < <(grep -rIlE "$MARKERS" "$ROOT" \
-           --exclude-dir='miasma-shaihulud-audit-*' \
-           --exclude-dir='miasma-persistence-*' \
-           --exclude-dir='miasma-npm-supplychain-*' \
-           --include='*.js' --include='*.mjs' --include='*.cjs' \
-           --include='*.json' --include='*.gyp' 2>/dev/null)
+# Drive the file list with find + xargs instead of `grep -r`: BSD/macOS grep
+# crawls every node_modules file and can run for tens of minutes on a large
+# repo tree. node_modules stays in scope (that's where implants land); .git and
+# build output are pruned (consistent with project discovery). LC_ALL=C makes
+# the ASCII-only marker match far faster on both GNU and BSD grep. The size cap
+# skips giant minified bundles / source-maps / lockfiles that can't hold a short
+# marker without being caught elsewhere (a >1MB node_modules/index.js implant is
+# already flagged in section 3). The trailing /dev/null keeps grep from reading
+# stdin (and hanging) when find yields no files.
+done < <(
+  find "$ROOT" "${SKIP_OUT[@]}" \
+    -type d \( -name .git -o -name dist -o -name build \) -prune -o \
+    -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \
+               -o -name '*.json' -o -name '*.gyp' \) -size -20000000c -print0 2>/dev/null \
+  | LC_ALL=C xargs -0 grep -IlE "$MARKERS" /dev/null 2>/dev/null
+)
 report ""
 
 # -----------------------------------------------------------------------------
