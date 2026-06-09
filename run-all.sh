@@ -58,7 +58,11 @@ EOF
 
 # Only intercept --help; everything else is forwarded verbatim to each scan.
 for a in "$@"; do
-  case "$a" in -h|--help) usage; exit 0 ;; esac
+  case "$a" in -h | --help)
+    usage
+    exit 0
+    ;;
+  esac
 done
 
 LOG="$OUTBASE/miasma-run-all-$(date +%Y%m%d-%H%M%S).log"
@@ -67,7 +71,8 @@ mkdir -p "$OUTBASE"
 # run_scan <script> [scan-args...]: run one sibling scan, banner + output + exit
 # line all tee'd to the combined log. Returns the scan's exit code (1 if missing).
 run_scan() {
-  local s="$1"; shift
+  local s="$1"
+  shift
   local path="$SCRIPT_DIR/$s" rc
   if [ ! -x "$path" ]; then
     printf '!! SKIP: %s not found or not executable\n' "$s" | tee -a "$LOG"
@@ -92,9 +97,9 @@ for s in "${SCANS[@]}"; do
 done
 
 case "$worst" in
-  2) summary="OVERALL: COMPROMISE INDICATORS ([!!]). Clean the machine FIRST, then rotate from a trusted device." ;;
-  1) summary="OVERALL: SUSPICIOUS artifacts ([!]) need manual review." ;;
-  *) summary="OVERALL: clean of the on-host indicators these scans check (not a guarantee)." ;;
+2) summary="OVERALL: COMPROMISE INDICATORS ([!!]). Clean the machine FIRST, then rotate from a trusted device." ;;
+1) summary="OVERALL: SUSPICIOUS artifacts ([!]) need manual review." ;;
+*) summary="OVERALL: clean of the on-host indicators these scans check (not a guarantee)." ;;
 esac
 
 {

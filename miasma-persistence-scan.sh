@@ -54,12 +54,26 @@ COPY_EVIDENCE="${COPY_EVIDENCE:-0}"
 ROOT=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help)       usage; exit 0 ;;
-    --copy-evidence) COPY_EVIDENCE=1 ;;
-    --offline)       : ;;  # accepted for wrapper compatibility; no network here
-    --)              shift; [ $# -gt 0 ] && ROOT="$1"; break ;;
-    -*)              echo "unknown option: $1" >&2; usage; exit 64 ;;
-    *)               if [ -z "$ROOT" ]; then ROOT="$1"; else echo "unexpected arg: $1" >&2; exit 64; fi ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  --copy-evidence) COPY_EVIDENCE=1 ;;
+  --offline) : ;; # accepted for wrapper compatibility; no network here
+  --)
+    shift
+    [ $# -gt 0 ] && ROOT="$1"
+    break
+    ;;
+  -*)
+    echo "unknown option: $1" >&2
+    usage
+    exit 64
+    ;;
+  *) if [ -z "$ROOT" ]; then ROOT="$1"; else
+    echo "unexpected arg: $1" >&2
+    exit 64
+  fi ;;
   esac
   shift
 done
@@ -75,11 +89,12 @@ MARKERS='Miasma|Shai-Hulud|api\.anthropic\.com/v1/api|__FAKE_PLATFORM__|TESTING_
 SUSPICIOUS='curl |wget |base64 -d|base64 --decode|node -e|node --eval|bun |eval "\$\(|/dev/tcp/|nc -e|SessionStart|setup\.(js|mjs)'
 
 # Severity counters drive the exit code: [!!]=confirmed/critical, [!]=review.
-CRIT=0; WARN=0
+CRIT=0
+WARN=0
 report() {
   case "$*" in
-    *"[!!]"*) CRIT=$((CRIT+1)) ;;
-    *"[!]"*)  WARN=$((WARN+1)) ;;
+  *"[!!]"*) CRIT=$((CRIT + 1)) ;;
+  *"[!]"*) WARN=$((WARN + 1)) ;;
   esac
   printf '%s\n' "$*" | tee -a "$OUT/report.txt"
 }
@@ -94,7 +109,8 @@ copy_evidence() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
-HAVE_CRONTAB=0; have crontab && HAVE_CRONTAB=1
+HAVE_CRONTAB=0
+have crontab && HAVE_CRONTAB=1
 
 # Reusable prune so the scan never re-ingests an audit output directory, matched
 # by NAME so it works wherever MIASMA_OUT_DIR points.
@@ -130,7 +146,7 @@ scan_user_crontab() {
   else
     report "[i] User crontab present but no suspicious markers; review manually."
   fi
-  [ "$COPY_EVIDENCE" = "1" ] && printf '%s\n' "$cron_out" > "$OUT/evidence/user-crontab.txt"
+  [ "$COPY_EVIDENCE" = "1" ] && printf '%s\n' "$cron_out" >"$OUT/evidence/user-crontab.txt"
   return 0
 }
 
@@ -158,7 +174,8 @@ done
 # Anything sourced from ~/.bashrc.d or ~/.profile.d style drop-in dirs.
 while IFS= read -r f; do scan_file "$f" "shell rc drop-in"; done < <(
   find "$HOME"/.bashrc.d "$HOME"/.profile.d "$HOME"/.config/fish/conf.d \
-    "${SKIP_OUT[@]}" -type f -print 2>/dev/null)
+    "${SKIP_OUT[@]}" -type f -print 2>/dev/null
+)
 report ""
 
 # -----------------------------------------------------------------------------
@@ -168,7 +185,8 @@ report "=== Cron ==="
 scan_user_crontab
 while IFS= read -r f; do scan_file "$f" "cron"; done < <(
   find /etc/cron.d /etc/cron.hourly /etc/cron.daily /etc/cron.weekly \
-       /etc/cron.monthly /var/spool/cron "${SKIP_OUT[@]}" -type f -print 2>/dev/null)
+    /etc/cron.monthly /var/spool/cron "${SKIP_OUT[@]}" -type f -print 2>/dev/null
+)
 scan_file /etc/crontab "cron"
 report ""
 
@@ -180,7 +198,7 @@ while IFS= read -r f; do
   # An ExecStart pointing at curl/node/bun or a temp path is the extra tell.
   scan_file "$f" "systemd user unit" 'ExecStart=.*(curl|wget|/tmp/|node |bun )'
 done < <(find "$HOME/.config/systemd/user" "$HOME/.local/share/systemd/user" \
-              "${SKIP_OUT[@]}" -type f \( -name '*.service' -o -name '*.timer' \) -print 2>/dev/null)
+  "${SKIP_OUT[@]}" -type f \( -name '*.service' -o -name '*.timer' \) -print 2>/dev/null)
 report ""
 
 # -----------------------------------------------------------------------------
@@ -193,11 +211,12 @@ while IFS= read -r hook; do
   [ -f "$hook" ] || continue
   scan_file "$hook" "git hook"
 done < <(find "$ROOT" "${SKIP_OUT[@]}" -type d -name hooks -path '*/.git/hooks' \
-              -exec find {} -type f \; 2>/dev/null)
+  -exec find {} -type f \; 2>/dev/null)
 report ""
 
 # -----------------------------------------------------------------------------
-CRIT_F=$CRIT; WARN_F=$WARN
+CRIT_F=$CRIT
+WARN_F=$WARN
 report "=== DONE ==="
 report ""
 report "Findings: ${CRIT_F} critical [!!], ${WARN_F} review [!]"

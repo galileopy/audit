@@ -53,12 +53,26 @@ COPY_EVIDENCE="${COPY_EVIDENCE:-0}"
 ROOT=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help)       usage; exit 0 ;;
-    --copy-evidence) COPY_EVIDENCE=1 ;;
-    --offline)       : ;;  # accepted for wrapper compatibility; queries no registry
-    --)              shift; [ $# -gt 0 ] && ROOT="$1"; break ;;
-    -*)              echo "unknown option: $1" >&2; usage; exit 64 ;;
-    *)               if [ -z "$ROOT" ]; then ROOT="$1"; else echo "unexpected arg: $1" >&2; exit 64; fi ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  --copy-evidence) COPY_EVIDENCE=1 ;;
+  --offline) : ;; # accepted for wrapper compatibility; queries no registry
+  --)
+    shift
+    [ $# -gt 0 ] && ROOT="$1"
+    break
+    ;;
+  -*)
+    echo "unknown option: $1" >&2
+    usage
+    exit 64
+    ;;
+  *) if [ -z "$ROOT" ]; then ROOT="$1"; else
+    echo "unexpected arg: $1" >&2
+    exit 64
+  fi ;;
   esac
   shift
 done
@@ -79,11 +93,12 @@ SUSPICIOUS='curl |wget |base64 -d|base64 --decode|node -e|node --eval|bun |/dev/
 LIFECYCLE_RE='"(preinstall|install|postinstall|prepare|prepublish|prepublishOnly)"'
 
 # Severity counters drive the exit code: [!!]=confirmed/critical, [!]=review.
-CRIT=0; WARN=0
+CRIT=0
+WARN=0
 report() {
   case "$*" in
-    *"[!!]"*) CRIT=$((CRIT+1)) ;;
-    *"[!]"*)  WARN=$((WARN+1)) ;;
+  *"[!!]"*) CRIT=$((CRIT + 1)) ;;
+  *"[!]"*) WARN=$((WARN + 1)) ;;
   esac
   printf '%s\n' "$*" | tee -a "$OUT/report.txt"
 }
@@ -106,8 +121,10 @@ copy_evidence() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
-HAVE_JQ=0;  have jq  && HAVE_JQ=1
-HAVE_NPM=0; have npm && HAVE_NPM=1
+HAVE_JQ=0
+have jq && HAVE_JQ=1
+HAVE_NPM=0
+have npm && HAVE_NPM=1
 
 # Reusable prune so no find re-ingests an audit output directory, matched by
 # NAME so it works wherever MIASMA_OUT_DIR points.
@@ -122,8 +139,10 @@ scan_lifecycle_jq() {
     | select(.key|test("^(pre|post)?(install|prepare|prepublish)"))
     | "\(.key): \(.value)"' "$pj" 2>/dev/null)"
   [ -n "$scripts" ] || return 0
-  if printf '%s' "$scripts" | grep -EqsI "$MARKERS"; then sev="!!"
-  elif printf '%s' "$scripts" | grep -EqsI "$SUSPICIOUS"; then sev="!"
+  if printf '%s' "$scripts" | grep -EqsI "$MARKERS"; then
+    sev="!!"
+  elif printf '%s' "$scripts" | grep -EqsI "$SUSPICIOUS"; then
+    sev="!"
   fi
   [ -n "$sev" ] || return 0
   report "[$sev] Suspicious lifecycle script in $pj:"
@@ -135,8 +154,10 @@ scan_lifecycle_jq() {
 # lifecycle key and a payload tell on one line.
 scan_lifecycle_grep() {
   local pj="$1" sev=""
-  if grep -EqsI "$LIFECYCLE_RE.*($MARKERS)" "$pj" 2>/dev/null; then sev="!!"
-  elif grep -EqsI "$LIFECYCLE_RE.*($SUSPICIOUS)" "$pj" 2>/dev/null; then sev="!"
+  if grep -EqsI "$LIFECYCLE_RE.*($MARKERS)" "$pj" 2>/dev/null; then
+    sev="!!"
+  elif grep -EqsI "$LIFECYCLE_RE.*($SUSPICIOUS)" "$pj" 2>/dev/null; then
+    sev="!"
   fi
   [ -n "$sev" ] || return 0
   report "[$sev] Suspicious lifecycle script (grep) in $pj:"
@@ -152,7 +173,7 @@ report "=== Miasma / Shai-Hulud npm supply-chain scan (read-only) ==="
 report "Started: $(date '+%Y-%m-%dT%H:%M:%S%z')"
 report "Root: $ROOT"
 miss=""
-[ "$HAVE_JQ" = "1" ]  || miss="$miss jq"
+[ "$HAVE_JQ" = "1" ] || miss="$miss jq"
 [ "$HAVE_NPM" = "1" ] || miss="$miss npm"
 [ -n "$miss" ] && report "[i] Missing tools (related checks downgraded):$miss"
 report ""
@@ -165,7 +186,7 @@ report "=== package.json lifecycle scripts ==="
 while IFS= read -r pj; do
   if [ "$HAVE_JQ" = "1" ]; then scan_lifecycle_jq "$pj"; else scan_lifecycle_grep "$pj"; fi
 done < <(find "$ROOT" "${SKIP_OUT[@]}" -type d -name node_modules -prune -false \
-              -o -type f -name package.json -print 2>/dev/null)
+  -o -type f -name package.json -print 2>/dev/null)
 report ""
 
 # -----------------------------------------------------------------------------
@@ -177,8 +198,8 @@ report "=== ~/.npmrc inspection ==="
 while IFS= read -r rc; do
   [ -f "$rc" ] || continue
   # A non-default registry or an inline _authToken is worth a manual look.
-  if grep -Eqs 'registry *=' "$rc" 2>/dev/null \
-     && ! grep -Eqs 'registry *= *https://registry\.npmjs\.org/?' "$rc"; then
+  if grep -Eqs 'registry *=' "$rc" 2>/dev/null &&
+    ! grep -Eqs 'registry *= *https://registry\.npmjs\.org/?' "$rc"; then
     report "[!] Non-default registry configured in $rc (confirm you set it):"
     grep -Ens 'registry *=' "$rc" | while IFS= read -r l; do report "      $l"; done
   fi
@@ -186,7 +207,10 @@ while IFS= read -r rc; do
     report "[!] $rc contains an inline npm credential — rotate from a clean device."
     report "      (token value intentionally not copied to evidence)"
   fi
-done < <({ printf '%s\n' "$HOME/.npmrc"; find "$ROOT" -maxdepth 4 "${SKIP_OUT[@]}" -name '.npmrc' -type f -print 2>/dev/null; } | sort -u)
+done < <({
+  printf '%s\n' "$HOME/.npmrc"
+  find "$ROOT" -maxdepth 4 "${SKIP_OUT[@]}" -name '.npmrc' -type f -print 2>/dev/null
+} | sort -u)
 report ""
 
 # -----------------------------------------------------------------------------
@@ -195,8 +219,10 @@ report ""
 report "=== Global / nvm node_modules ==="
 GLOBAL_ROOTS=()
 if [ "$HAVE_NPM" = "1" ]; then
-  g="$(npm root -g 2>/dev/null)"; [ -n "$g" ] && GLOBAL_ROOTS+=("$g")
-  p="$(npm config get prefix 2>/dev/null)"; [ -n "$p" ] && GLOBAL_ROOTS+=("$p/lib/node_modules" "$p/node_modules")
+  g="$(npm root -g 2>/dev/null)"
+  [ -n "$g" ] && GLOBAL_ROOTS+=("$g")
+  p="$(npm config get prefix 2>/dev/null)"
+  [ -n "$p" ] && GLOBAL_ROOTS+=("$p/lib/node_modules" "$p/node_modules")
 else
   report "[i] npm not on PATH; using well-known global prefixes only."
 fi
@@ -215,7 +241,8 @@ done < <(printf '%s\n' "${GLOBAL_ROOTS[@]}" | sort -u)
 report ""
 
 # -----------------------------------------------------------------------------
-CRIT_F=$CRIT; WARN_F=$WARN
+CRIT_F=$CRIT
+WARN_F=$WARN
 report "=== DONE ==="
 report ""
 report "Findings: ${CRIT_F} critical [!!], ${WARN_F} review [!]"
