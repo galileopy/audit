@@ -88,6 +88,14 @@ report() {
   printf '%s\n' "$*" | tee -a "$OUT/report.txt"
 }
 
+# report_indented: report each line of stdin as an indented detail line beneath a
+# finding header. Call with process substitution (report_indented < <(...)) so it
+# runs in this shell and report()'s counters are preserved.
+report_indented() {
+  local l
+  while IFS= read -r l; do report "      $l"; done
+}
+
 # Evidence copying is OPT-IN (COPY_EVIDENCE / --copy-evidence); copied files may
 # contain live payloads or secrets.
 copy_evidence() {
@@ -104,6 +112,37 @@ HAVE_NPM=0; have npm && HAVE_NPM=1
 # Reusable prune so no find re-ingests an audit output directory, matched by
 # NAME so it works wherever MIASMA_OUT_DIR points.
 SKIP_OUT=(-type d \( -name 'miasma-shaihulud-audit-*' -o -name 'miasma-persistence-*' -o -name 'miasma-npm-supplychain-*' \) -prune -o)
+
+# scan_lifecycle_jq <package.json>: authoritative check — pull only the lifecycle
+# script values via jq, then match (worm marker -> [!!]; dropper command -> [!]).
+scan_lifecycle_jq() {
+  local pj="$1" scripts sev=""
+  scripts="$(jq -r '
+    .scripts // {} | to_entries[]
+    | select(.key|test("^(pre|post)?(install|prepare|prepublish)"))
+    | "\(.key): \(.value)"' "$pj" 2>/dev/null)"
+  [ -n "$scripts" ] || return 0
+  if printf '%s' "$scripts" | grep -EqsI "$MARKERS"; then sev="!!"
+  elif printf '%s' "$scripts" | grep -EqsI "$SUSPICIOUS"; then sev="!"
+  fi
+  [ -n "$sev" ] || return 0
+  report "[$sev] Suspicious lifecycle script in $pj:"
+  report_indented < <(printf '%s\n' "$scripts" | grep -EI "$MARKERS|$SUSPICIOUS")
+  copy_evidence "$pj"
+}
+
+# scan_lifecycle_grep <package.json>: fallback when jq is absent — match a
+# lifecycle key and a payload tell on one line.
+scan_lifecycle_grep() {
+  local pj="$1" sev=""
+  if grep -EqsI "$LIFECYCLE_RE.*($MARKERS)" "$pj" 2>/dev/null; then sev="!!"
+  elif grep -EqsI "$LIFECYCLE_RE.*($SUSPICIOUS)" "$pj" 2>/dev/null; then sev="!"
+  fi
+  [ -n "$sev" ] || return 0
+  report "[$sev] Suspicious lifecycle script (grep) in $pj:"
+  report_indented < <(grep -EnsI "$LIFECYCLE_RE.*($MARKERS|$SUSPICIOUS)" "$pj" 2>/dev/null)
+  copy_evidence "$pj"
+}
 
 echo "npm supply-chain audit output: $OUT"
 echo "(read-only: this script does not modify, remove, or rotate anything)"
@@ -124,36 +163,7 @@ report ""
 # -----------------------------------------------------------------------------
 report "=== package.json lifecycle scripts ==="
 while IFS= read -r pj; do
-  if [ "$HAVE_JQ" = "1" ]; then
-    # Authoritative: pull only the lifecycle script values, then match.
-    scripts="$(jq -r '
-      .scripts // {} | to_entries[]
-      | select(.key|test("^(pre|post)?(install|prepare|prepublish)"))
-      | "\(.key): \(.value)"' "$pj" 2>/dev/null)"
-    [ -n "$scripts" ] || continue
-    sev=""
-    if printf '%s' "$scripts" | grep -EqsI "$MARKERS"; then sev="!!"
-    elif printf '%s' "$scripts" | grep -EqsI "$SUSPICIOUS"; then sev="!"
-    fi
-    if [ -n "$sev" ]; then
-      report "[$sev] Suspicious lifecycle script in $pj:"
-      while IFS= read -r l; do report "      $l"; done \
-        < <(printf '%s\n' "$scripts" | grep -EI "$MARKERS|$SUSPICIOUS")
-      copy_evidence "$pj"
-    fi
-  else
-    # Fallback (no jq): match a lifecycle key and a payload tell on one line.
-    sev=""
-    if grep -EqsI "$LIFECYCLE_RE.*($MARKERS)" "$pj" 2>/dev/null; then sev="!!"
-    elif grep -EqsI "$LIFECYCLE_RE.*($SUSPICIOUS)" "$pj" 2>/dev/null; then sev="!"
-    fi
-    if [ -n "$sev" ]; then
-      report "[$sev] Suspicious lifecycle script (grep) in $pj:"
-      grep -EnsI "$LIFECYCLE_RE.*($MARKERS|$SUSPICIOUS)" "$pj" 2>/dev/null \
-        | while IFS= read -r l; do report "      $l"; done
-      copy_evidence "$pj"
-    fi
-  fi
+  if [ "$HAVE_JQ" = "1" ]; then scan_lifecycle_jq "$pj"; else scan_lifecycle_grep "$pj"; fi
 done < <(find "$ROOT" "${SKIP_OUT[@]}" -type d -name node_modules -prune -false \
               -o -type f -name package.json -print 2>/dev/null)
 report ""

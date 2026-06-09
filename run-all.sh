@@ -64,13 +64,14 @@ done
 LOG="$OUTBASE/miasma-run-all-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$OUTBASE"
 
-worst=0
-for s in "${SCANS[@]}"; do
-  path="$SCRIPT_DIR/$s"
+# run_scan <script> [scan-args...]: run one sibling scan, banner + output + exit
+# line all tee'd to the combined log. Returns the scan's exit code (1 if missing).
+run_scan() {
+  local s="$1"; shift
+  local path="$SCRIPT_DIR/$s" rc
   if [ ! -x "$path" ]; then
     printf '!! SKIP: %s not found or not executable\n' "$s" | tee -a "$LOG"
-    [ "$worst" -lt 1 ] && worst=1
-    continue
+    return 1
   fi
   {
     printf '\n############################################################\n'
@@ -80,6 +81,13 @@ for s in "${SCANS[@]}"; do
   "$path" "$@" 2>&1 | tee -a "$LOG"
   rc=${PIPESTATUS[0]}
   printf -- '---- %s exit: %s ----\n' "$s" "$rc" | tee -a "$LOG"
+  return "$rc"
+}
+
+worst=0
+for s in "${SCANS[@]}"; do
+  run_scan "$s" "$@"
+  rc=$?
   [ "$rc" -gt "$worst" ] && worst="$rc"
 done
 

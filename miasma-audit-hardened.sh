@@ -108,6 +108,23 @@ report() {
   printf '%s\n' "$*" | tee -a "$OUT/report.txt"
 }
 
+# report_indented: report each line of stdin as an indented detail line beneath a
+# finding header. Call with process substitution (report_indented < <(...)) so it
+# runs in this shell and report()'s counters are preserved.
+report_indented() {
+  local l
+  while IFS= read -r l; do report "      $l"; done
+}
+
+# progress <idx> <total> <label> <item>: per-project progress to stderr so long
+# loops never look stuck. In-place on a TTY; plain lines when stderr is redirected
+# (run-all log / a pipe). progress_clear erases the dangling in-place line.
+progress() {
+  if [ -t 2 ]; then printf '\r  [%s %d/%d] %s\033[K' "$3" "$1" "$2" "$4" >&2
+  else printf '  [%s %d/%d] %s\n' "$3" "$1" "$2" "$4" >&2; fi
+}
+progress_clear() { [ -t 2 ] && printf '\r\033[K' >&2; }
+
 # Evidence copying is OPT-IN (COPY_EVIDENCE / --copy-evidence); copied files may
 # contain live payloads or secrets.
 copy_evidence() {
@@ -173,6 +190,24 @@ affected_resolved() {
     | { n: (.key | sub("^.*node_modules/"; "")), v: .value.version }
     | select(.n | test("^(@redhat-cloud-services/|@vapi-ai/server-sdk$|ai-sdk-ollama$|autotel$|awaitly$|executable-stories$|node-env-resolver$|wrangler-deploy$|mountly$)"))
     | "\(.n)\t\(.v)"' "$dir/package-lock.json" 2>/dev/null | sort -u
+}
+
+# classify_binding_gyp <file> <size>: echo "<sev>\t<reason>" for a node_modules
+# binding.gyp. Native modules ship these legitimately (i); escalate inside an
+# affected package or next to a worm marker (!!), or when tiny (~157B dropper, !).
+classify_binding_gyp() {
+  local f="$1" sz="$2" pkgdir reason="" sev="i" pkg
+  pkgdir=$(dirname "$f")
+  for pkg in "${AFFECTED_PKGS[@]}"; do
+    case "$f" in */node_modules/"$pkg"/*) reason="inside affected package $pkg"; sev="!!" ;; esac
+  done
+  if [ "$sev" = "i" ] && grep -RIEqs "$MARKERS" "$pkgdir" 2>/dev/null; then
+    reason="worm marker in same package dir"; sev="!!"
+  fi
+  if [ "$sev" = "i" ] && [ "$sz" -gt 0 ] 2>/dev/null && [ "$sz" -le 200 ] 2>/dev/null; then
+    reason="suspiciously tiny (~157B dropper tell)"; sev="!"
+  fi
+  printf '%s\t%s' "$sev" "$reason"
 }
 
 report "=== Miasma / Shai-Hulud defensive audit (read-only) ==="
@@ -271,23 +306,19 @@ if command -v npm >/dev/null 2>&1; then
   for dir in "${PROJECTS[@]+"${PROJECTS[@]}"}"; do
     npm_idx=$((npm_idx+1))
     [ -f "$dir/package.json" ] || continue
-    # Per-project progress to stderr so the long loop never looks stuck. In-place
-    # on a TTY; plain lines when stderr is redirected (run-all log / a pipe).
-    if [ -t 2 ]; then printf '\r  [npm ls %d/%d] %s\033[K' "$npm_idx" "$npm_total" "$dir" >&2
-    else printf '  [npm ls %d/%d] %s\n' "$npm_idx" "$npm_total" "$dir" >&2; fi
+    progress "$npm_idx" "$npm_total" "npm ls" "$dir"
     # One npm ls for all targets (it accepts multiple specs) instead of one per
     # target — ~3x fewer node cold-starts on a large tree.
     ls_out="$( (cd "$dir" && npm ls "${NPM_TARGETS[@]}" --all 2>/dev/null) )"
     for pkg in "${NPM_TARGETS[@]}"; do
       if printf '%s' "$ls_out" | grep -qF -- "$pkg@"; then
         report "[!] npm ls found $pkg in $dir:"
-        while IFS= read -r l; do report "      $l"; done \
-          < <(printf '%s\n' "$ls_out" | grep -F -- "$pkg@")
+        report_indented < <(printf '%s\n' "$ls_out" | grep -F -- "$pkg@")
         printf '%s\n' "$ls_out" >> "$OUT/npm-ls-matches.txt"
       fi
     done
   done
-  [ -t 2 ] && printf '\r\033[K' >&2   # erase the dangling progress line
+  progress_clear
 else
   report "[i] npm not on PATH; skipped. Run 'npm ls <pkg>' manually per the checklist."
 fi
@@ -315,9 +346,7 @@ else
   view_total=${#PROJECTS[@]}; view_idx=0
   for dir in "${PROJECTS[@]+"${PROJECTS[@]}"}"; do
     view_idx=$((view_idx+1))
-    # Per-project progress to stderr (this stage hits the network via npm view).
-    if [ -t 2 ]; then printf '\r  [publish-date %d/%d] %s\033[K' "$view_idx" "$view_total" "$dir" >&2
-    else printf '  [publish-date %d/%d] %s\n' "$view_idx" "$view_total" "$dir" >&2; fi
+    progress "$view_idx" "$view_total" "publish-date" "$dir"   # this stage hits the network
     while IFS=$'\t' read -r name ver; do
       [ -n "$name" ] && [ -n "$ver" ] || continue
       any_resolved=1
@@ -334,7 +363,7 @@ else
       esac
     done < <(affected_resolved "$dir")
   done
-  [ -t 2 ] && printf '\r\033[K' >&2   # erase the dangling progress line
+  progress_clear
   [ "$any_resolved" = "0" ] && report "[i] No affected package resolves in any project lockfile."
 fi
 report ""
@@ -350,17 +379,7 @@ report "=== Installed-package implant scan (node_modules) ==="
 #     tiny (~157B is the dropper's tell -> [!]).
 while IFS= read -r f; do
   sz=$(file_size "$f")
-  pkgdir=$(dirname "$f")
-  reason=""; sev="i"
-  for pkg in "${AFFECTED_PKGS[@]}"; do
-    case "$f" in */node_modules/"$pkg"/*) reason="inside affected package $pkg"; sev="!!" ;; esac
-  done
-  if [ "$sev" = "i" ] && grep -RIEqs "$MARKERS" "$pkgdir" 2>/dev/null; then
-    reason="worm marker in same package dir"; sev="!!"
-  fi
-  if [ "$sev" = "i" ] && [ "$sz" -gt 0 ] 2>/dev/null && [ "$sz" -le 200 ] 2>/dev/null; then
-    reason="suspiciously tiny (~157B dropper tell)"; sev="!"
-  fi
+  IFS=$'\t' read -r sev reason < <(classify_binding_gyp "$f" "$sz")
   case "$sev" in
     "!!") report "[!!] binding.gyp ($reason, ${sz}B): $f"; copy_evidence "$f" ;;
     "!")  report "[!] binding.gyp ($reason, ${sz}B): $f"; copy_evidence "$f" ;;

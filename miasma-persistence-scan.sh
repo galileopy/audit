@@ -116,6 +116,24 @@ scan_file() {
   fi
 }
 
+# scan_user_crontab: classify the current user's crontab (worm marker -> [!!];
+# dropper command -> [!]; otherwise informational). Copies only with evidence on.
+scan_user_crontab() {
+  [ "$HAVE_CRONTAB" = "1" ] || return 0
+  local cron_out
+  cron_out="$(crontab -l 2>/dev/null)"
+  [ -n "$cron_out" ] || return 0
+  if printf '%s' "$cron_out" | grep -EqsI "$MARKERS"; then
+    report "[!!] User crontab contains a worm marker."
+  elif printf '%s' "$cron_out" | grep -EqsI "$SUSPICIOUS"; then
+    report "[!] User crontab contains suspicious entries (review)."
+  else
+    report "[i] User crontab present but no suspicious markers; review manually."
+  fi
+  [ "$COPY_EVIDENCE" = "1" ] && printf '%s\n' "$cron_out" > "$OUT/evidence/user-crontab.txt"
+  return 0
+}
+
 echo "Persistence audit output: $OUT"
 echo "(read-only: this script does not modify, remove, or rotate anything)"
 echo "(evidence copying is opt-in: set COPY_EVIDENCE=1 to preserve flagged files)"
@@ -147,19 +165,7 @@ report ""
 # 2. Cron (user + system)
 # -----------------------------------------------------------------------------
 report "=== Cron ==="
-if [ "$HAVE_CRONTAB" = "1" ]; then
-  cron_out="$(crontab -l 2>/dev/null)"
-  if [ -n "$cron_out" ]; then
-    if printf '%s' "$cron_out" | grep -EqsI "$MARKERS"; then
-      report "[!!] User crontab contains a worm marker."
-    elif printf '%s' "$cron_out" | grep -EqsI "$SUSPICIOUS"; then
-      report "[!] User crontab contains suspicious entries (review)."
-    else
-      report "[i] User crontab present but no suspicious markers; review manually."
-    fi
-    [ "$COPY_EVIDENCE" = "1" ] && printf '%s\n' "$cron_out" > "$OUT/evidence/user-crontab.txt"
-  fi
-fi
+scan_user_crontab
 while IFS= read -r f; do scan_file "$f" "cron"; done < <(
   find /etc/cron.d /etc/cron.hourly /etc/cron.daily /etc/cron.weekly \
        /etc/cron.monthly /var/spool/cron "${SKIP_OUT[@]}" -type f -print 2>/dev/null)
