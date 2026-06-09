@@ -17,6 +17,7 @@ can trigger retaliation (e.g. wiping `$HOME`).
 | `miasma-audit-hardened.sh` | Affected packages/versions (lockfile-resolved), `npm ls`, registry publish-dates, node_modules implants, worm marker strings, Claude config & hooks (incl. `~/.claude.json`, `settings.local`, project `.mcp.json`, MCP servers, managed settings), VS Code tasks, GitHub workflows, local git history |
 | `miasma-persistence-scan.sh` | Shell startup files, cron, systemd user units, git hooks |
 | `miasma-npm-supplychain-scan.sh` | `package.json` lifecycle scripts, `~/.npmrc`, global / nvm `node_modules` |
+| `miasma-triage.sh` | **Reads an existing report** and digs deeper — no re-scan. Per `[!!]` marker: which marker, the matching line, and (for a lockfile) the offending `package@version` + resolved URL; plus exposure checks (installed? git hooks? folderOpen task?) and a data-only-vs-execution verdict |
 
 The main script covers the on-host portion of the public checklist; the two
 companions cover persistence and npm surface beyond it. Off-host steps the
@@ -43,6 +44,19 @@ runners, OIDC trust) are listed at the end of the main report.
 # help for any of them
 ./run-all.sh --help
 ```
+
+Already have a report and want to understand a `[!!]` without re-scanning (the
+scan can be slow on a big tree)? Point the triage tool at the audit folder:
+
+```bash
+./miasma-triage.sh ~/path/to/miasma-shaihulud-audit-YYYYMMDD-HHMMSS
+# (also accepts the parent folder, or a report.txt directly)
+```
+
+It re-reads only the files the audit already flagged, so it's fast. For richest
+output run it on the machine that holds those files (it re-reads them to map a
+lockfile marker to the offending package); otherwise it falls back to what the
+report recorded.
 
 Each scan writes a timestamped folder (and `run-all.sh` a combined `.log`) **next
 to the scripts** by default. Reports are plain text:
