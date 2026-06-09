@@ -4,3 +4,7 @@ miasma-shaihulud-audit-*/
 miasma-persistence-*/
 miasma-npm-supplychain-*/
 miasma-run-all-*.log
+
+# Pasted triage / console captures — may contain secrets pulled from configs.
+audit-deep.txt
+*-triage.txt
