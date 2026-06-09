@@ -125,6 +125,15 @@ HAVE_NPM=0;  have npm  && HAVE_NPM=1
 HAVE_GIT=0;  have git  && HAVE_GIT=1
 HAVE_STAT=0; have stat && HAVE_STAT=1
 
+# Portable file size in bytes: GNU stat is `-c %s`, BSD/macOS stat is `-f %z`.
+# Falls back to wc -c, then 0, so the size-based heuristics never silently read
+# 0 on macOS (which would defeat the dropper-size and big-implant checks).
+file_size() {
+  [ -f "$1" ] || { echo 0; return; }
+  stat -c '%s' "$1" 2>/dev/null || stat -f '%z' "$1" 2>/dev/null \
+    || wc -c < "$1" 2>/dev/null || echo 0
+}
+
 # Reusable prune so no find re-ingests a previous (or current) audit output dir,
 # matched by NAME so it works wherever MIASMA_OUT_DIR points. Splice in right
 # after the root: find "$ROOT" "${SKIP_OUT[@]}" ...
@@ -340,7 +349,7 @@ report "=== Installed-package implant scan (node_modules) ==="
 #     an affected package or next to a worm marker ([!!]), or is suspiciously
 #     tiny (~157B is the dropper's tell -> [!]).
 while IFS= read -r f; do
-  sz=$(stat -c '%s' "$f" 2>/dev/null || echo 0)
+  sz=$(file_size "$f")
   pkgdir=$(dirname "$f")
   reason=""; sev="i"
   for pkg in "${AFFECTED_PKGS[@]}"; do
@@ -361,7 +370,7 @@ done < <(find "$ROOT" "${SKIP_OUT[@]}" -path '*/node_modules/*/binding.gyp' -typ
 
 # 3b. Oversized index.js at an installed package root (loader is ~4.5 MB).
 while IFS= read -r f; do
-  sz=$(stat -c '%s' "$f" 2>/dev/null || echo 0)
+  sz=$(file_size "$f")
   report "[!] Oversized index.js in installed package (${sz}B): $f"
   copy_evidence "$f"
 done < <(find "$ROOT" "${SKIP_OUT[@]}" -path '*/node_modules/*/index.js' -type f -size +1000000c -print 2>/dev/null)
