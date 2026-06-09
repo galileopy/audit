@@ -258,10 +258,18 @@ report ""
 report "=== npm ls (authoritative installed-tree check) ==="
 NPM_TARGETS=("@redhat-cloud-services" "@vapi-ai/server-sdk" "ai-sdk-ollama")
 if command -v npm >/dev/null 2>&1; then
+  npm_total=${#PROJECTS[@]}; npm_idx=0
   for dir in "${PROJECTS[@]+"${PROJECTS[@]}"}"; do
+    npm_idx=$((npm_idx+1))
     [ -f "$dir/package.json" ] || continue
+    # Per-project progress to stderr so the long loop never looks stuck. In-place
+    # on a TTY; plain lines when stderr is redirected (run-all log / a pipe).
+    if [ -t 2 ]; then printf '\r  [npm ls %d/%d] %s\033[K' "$npm_idx" "$npm_total" "$dir" >&2
+    else printf '  [npm ls %d/%d] %s\n' "$npm_idx" "$npm_total" "$dir" >&2; fi
+    # One npm ls for all targets (it accepts multiple specs) instead of one per
+    # target — ~3x fewer node cold-starts on a large tree.
+    ls_out="$( (cd "$dir" && npm ls "${NPM_TARGETS[@]}" --all 2>/dev/null) )"
     for pkg in "${NPM_TARGETS[@]}"; do
-      ls_out="$( (cd "$dir" && npm ls "$pkg" --all 2>/dev/null) )"
       if printf '%s' "$ls_out" | grep -qF -- "$pkg@"; then
         report "[!] npm ls found $pkg in $dir:"
         while IFS= read -r l; do report "      $l"; done \
@@ -270,6 +278,7 @@ if command -v npm >/dev/null 2>&1; then
       fi
     done
   done
+  [ -t 2 ] && printf '\r\033[K' >&2   # erase the dangling progress line
 else
   report "[i] npm not on PATH; skipped. Run 'npm ls <pkg>' manually per the checklist."
 fi
