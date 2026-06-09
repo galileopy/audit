@@ -38,9 +38,9 @@ EOF
 
 # --- config: kept in sync with miasma-audit-hardened.sh ----------------------
 # ERE for grep (matches the audit's worm markers).
-MARKERS='Miasma: The Spreading Blight|Shai-Hulud|api\.anthropic\.com/v1/api|__FAKE_PLATFORM__|TESTING_TAR_FAKE_PLATFORM|SKIP_DOMAIN|bypass_2fa'
+MARKERS='Miasma: The Spreading Blight|Shai-Hulud|api\.anthropic\.com/v1/api|SKIP_DOMAIN|bypass_2fa'
 # Same markers as a jq test() regex (single backslashes; passed via --arg).
-MARKERS_JQ='Shai-Hulud|Miasma|bypass_2fa|__FAKE_PLATFORM__|TESTING_TAR_FAKE_PLATFORM|SKIP_DOMAIN|api\.anthropic\.com/v1/api'
+MARKERS_JQ='Shai-Hulud|Miasma|bypass_2fa|SKIP_DOMAIN|api\.anthropic\.com/v1/api'
 
 have() { command -v "$1" >/dev/null 2>&1; }
 section() { printf '\n=== %s ===\n' "$1"; }

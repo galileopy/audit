@@ -110,7 +110,7 @@ declare -A BAD_VERSIONS=(
 )
 
 # On-disk marker strings left by the worm.
-MARKERS='Miasma: The Spreading Blight|Shai-Hulud|api\.anthropic\.com/v1/api|__FAKE_PLATFORM__|TESTING_TAR_FAKE_PLATFORM|SKIP_DOMAIN|bypass_2fa'
+MARKERS='Miasma: The Spreading Blight|Shai-Hulud|api\.anthropic\.com/v1/api|SKIP_DOMAIN|bypass_2fa'
 
 # Severity counters drive the exit code: [!!]=confirmed/critical, [!]=review.
 CRIT=0
@@ -243,17 +243,45 @@ classify_binding_gyp() {
 # marker -> [!!]; a hook/MCP command that fetches or executes -> [!]; hooks/MCP
 # merely configured -> [i]. These files routinely hold SECRETS, so they are copied
 # only with COPY_EVIDENCE=1 and never for an [i]. Reads CLAUDE_*_RE (set in §6).
+# claude_exec_commands <file>: with jq, print only the strings that would EXECUTE
+# — every object's hook/MCP `command` plus `args[]`, wherever nested. This is the
+# real dropper surface; it deliberately excludes `permissions.allow` (an array of
+# plain strings, no command/args key), so a curl you allowlisted for dev work is
+# not mistaken for a payload. Empty without jq (caller falls back to whole-file).
+claude_exec_commands() {
+  [ "$HAVE_JQ" = "1" ] || return 0
+  jq -r '
+    (.. | objects | .command? // empty),
+    (.. | objects | .args? // empty | select(type == "array") | .[])
+  ' "$1" 2>/dev/null
+}
+
 scan_claude_file() {
-  local f="$1"
+  local f="$1" execs
   if grep -EqsI "$MARKERS" "$f" 2>/dev/null; then
     report "[!!] Worm marker in Claude config (may contain SECRETS): $f"
     copy_evidence "$f"
     grep -EnsI "$MARKERS" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
+    return 0
+  fi
+  # Dropper tier. With jq, inspect ONLY executable fields so a curl in the
+  # permissions allowlist isn't a false positive; without jq, scan the whole file.
+  if [ "$HAVE_JQ" = "1" ]; then
+    execs="$(claude_exec_commands "$f")"
+    if printf '%s' "$execs" | grep -EqsI "$CLAUDE_DROPPER_RE"; then
+      report "[!] Claude hook/MCP command fetches or executes — review (may contain SECRETS): $f"
+      copy_evidence "$f"
+      { printf '## %s\n' "$f"; printf '%s\n' "$execs" | grep -EI "$CLAUDE_DROPPER_RE"; } \
+        >>"$OUT/claude-hook-matches.txt"
+      return 0
+    fi
   elif grep -EqsI "$CLAUDE_DROPPER_RE" "$f" 2>/dev/null; then
     report "[!] Claude hook/MCP command fetches or executes — review (may contain SECRETS): $f"
     copy_evidence "$f"
     grep -EnsI "$CLAUDE_DROPPER_RE|\"command\"" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
-  elif grep -EqsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null; then
+    return 0
+  fi
+  if grep -EqsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null; then
     report "[i] Hooks/MCP configured here — confirm you added them: $f"
     grep -EnsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
   fi
@@ -263,6 +291,9 @@ scan_claude_file() {
 # HEAD. Detail goes to evidence files; the headline findings are reported.
 scan_git_repo() {
   local repo="$1" tmplog
+  # Skip a clone of THIS audit tool — its own source legitimately contains the
+  # marker strings and would always self-flag.
+  [ -f "$repo/miasma-audit-hardened.sh" ] && return 0
   tmplog="$(mktemp)"
   if git -C "$repo" log --all --since="2026-05-29" --until="2026-06-06" \
     --oneline --decorate --stat >"$tmplog" 2>/dev/null && [ -s "$tmplog" ]; then
@@ -494,12 +525,30 @@ implant_scan() {
     esac
   done < <(find "$ROOT" "${SKIP_OUT[@]}" -path '*/node_modules/*/binding.gyp' -type f -print 2>/dev/null)
 
-  # 3b. Oversized index.js at an installed package root (loader is ~4.5 MB).
+  # 3b. Oversized index.js at an installed package root. The ~4.5 MB loader is a
+  #     tell, but plenty of legit packages ship big bundles (tiktoken, prettier,
+  #     @mui/icons-material, storybook), so SIZE ALONE is not suspicious. Escalate
+  #     to [!] only when the file sits inside an affected package or carries a worm
+  #     marker; otherwise just tally it (full list in oversized-index.txt).
+  big_count=0
   while IFS= read -r f; do
     sz=$(file_size "$f")
-    report "[!] Oversized index.js in installed package (${sz}B): $f"
-    copy_evidence "$f"
+    printf '%s\t%s\n' "$sz" "$f" >>"$OUT/oversized-index.txt"
+    big_count=$((big_count + 1))
+    sev="i"
+    reason=""
+    for pkg in "${AFFECTED_PKGS[@]}"; do
+      case "$f" in */node_modules/"$pkg"/*) sev="!" reason="inside affected package $pkg" ;; esac
+    done
+    if [ "$sev" = "i" ] && LC_ALL=C grep -IqsE "$MARKERS" "$f" 2>/dev/null; then
+      sev="!" reason="contains a worm marker"
+    fi
+    if [ "$sev" = "!" ]; then
+      report "[!] Oversized index.js ($reason, ${sz}B): $f"
+      copy_evidence "$f"
+    fi
   done < <(find "$ROOT" "${SKIP_OUT[@]}" -path '*/node_modules/*/index.js' -type f -size +1000000c -print 2>/dev/null)
+  [ "$big_count" -gt 0 ] && report "[i] $big_count oversized index.js under node_modules (size alone is not suspicious; full list in $OUT/oversized-index.txt)"
 
   # 3c. Known-affected packages actually present under node_modules.
   for pkg in "${AFFECTED_PKGS[@]}"; do
@@ -638,7 +687,10 @@ workflow_check() {
     if [ -n "$(find "$f" -newermt '2026-05-29' ! -newermt '2026-06-06' 2>/dev/null)" ]; then
       report "[i] Workflow modified during risk window: $f"
     fi
-  done < <(find "$ROOT" "${SKIP_OUT[@]}" -path '*/.github/workflows/*' -type f \( -name '*.yml' -o -name '*.yaml' \) -print 2>/dev/null)
+    # Workflows under node_modules are the package authors' OWN CI (shipped in the
+    # tarball), not something that runs here — prune them to kill the noise.
+  done < <(find "$ROOT" "${SKIP_OUT[@]}" -type d -name node_modules -prune -o \
+    -path '*/.github/workflows/*' -type f \( -name '*.yml' -o -name '*.yaml' \) -print 2>/dev/null)
   report ""
 }
 

@@ -84,7 +84,7 @@ OUT="$OUTBASE/miasma-persistence-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT/evidence"
 
 # Definitive worm markers (a hit here is [!!]); aligned with the main audit.
-MARKERS='Miasma|Shai-Hulud|api\.anthropic\.com/v1/api|__FAKE_PLATFORM__|TESTING_TAR_FAKE_PLATFORM|SKIP_DOMAIN|bypass_2fa'
+MARKERS='Miasma|Shai-Hulud|api\.anthropic\.com/v1/api|SKIP_DOMAIN|bypass_2fa'
 # Generic dropper commands a benign rc/hook rarely needs (a hit here is [!] review).
 SUSPICIOUS='curl |wget |base64 -d|base64 --decode|node -e|node --eval|bun |eval "\$\(|/dev/tcp/|nc -e|SessionStart|setup\.(js|mjs)'
 

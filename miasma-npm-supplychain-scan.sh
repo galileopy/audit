@@ -88,7 +88,7 @@ AFFECTED_PKGS=(
   "wrangler-deploy" "mountly"
 )
 # Definitive worm markers ([!!]); generic dropper commands ([!] review).
-MARKERS='Miasma|Shai-Hulud|api\.anthropic\.com/v1/api|__FAKE_PLATFORM__|TESTING_TAR_FAKE_PLATFORM|SKIP_DOMAIN|bypass_2fa'
+MARKERS='Miasma|Shai-Hulud|api\.anthropic\.com/v1/api|SKIP_DOMAIN|bypass_2fa'
 SUSPICIOUS='curl |wget |base64 -d|base64 --decode|node -e|node --eval|bun |/dev/tcp/|eval\(|child_process|setup\.(js|mjs)'
 LIFECYCLE_RE='"(preinstall|install|postinstall|prepare|prepublish|prepublishOnly)"'
 
