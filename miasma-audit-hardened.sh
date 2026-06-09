@@ -303,7 +303,12 @@ elif [ "$HAVE_JQ" != "1" ]; then
   report "[i] jq absent: cannot resolve exact versions for date correlation. Check manually."
 else
   any_resolved=0
+  view_total=${#PROJECTS[@]}; view_idx=0
   for dir in "${PROJECTS[@]+"${PROJECTS[@]}"}"; do
+    view_idx=$((view_idx+1))
+    # Per-project progress to stderr (this stage hits the network via npm view).
+    if [ -t 2 ]; then printf '\r  [publish-date %d/%d] %s\033[K' "$view_idx" "$view_total" "$dir" >&2
+    else printf '  [publish-date %d/%d] %s\n' "$view_idx" "$view_total" "$dir" >&2; fi
     while IFS=$'\t' read -r name ver; do
       [ -n "$name" ] && [ -n "$ver" ] || continue
       any_resolved=1
@@ -320,6 +325,7 @@ else
       esac
     done < <(affected_resolved "$dir")
   done
+  [ -t 2 ] && printf '\r\033[K' >&2   # erase the dangling progress line
   [ "$any_resolved" = "0" ] && report "[i] No affected package resolves in any project lockfile."
 fi
 report ""
