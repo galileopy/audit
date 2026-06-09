@@ -210,6 +210,43 @@ classify_binding_gyp() {
   printf '%s\t%s' "$sev" "$reason"
 }
 
+# scan_claude_file <file>: tiered check of one Claude config/settings file. Worm
+# marker -> [!!]; a hook/MCP command that fetches or executes -> [!]; hooks/MCP
+# merely configured -> [i]. These files routinely hold SECRETS, so they are copied
+# only with COPY_EVIDENCE=1 and never for an [i]. Reads CLAUDE_*_RE (set in §6).
+scan_claude_file() {
+  local f="$1"
+  if grep -EqsI "$MARKERS" "$f" 2>/dev/null; then
+    report "[!!] Worm marker in Claude config (may contain SECRETS): $f"
+    copy_evidence "$f"
+    grep -EnsI "$MARKERS" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
+  elif grep -EqsI "$CLAUDE_DROPPER_RE" "$f" 2>/dev/null; then
+    report "[!] Claude hook/MCP command fetches or executes — review (may contain SECRETS): $f"
+    copy_evidence "$f"
+    grep -EnsI "$CLAUDE_DROPPER_RE|\"command\"" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
+  elif grep -EqsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null; then
+    report "[i] Hooks/MCP configured here — confirm you added them: $f"
+    grep -EnsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
+  fi
+}
+
+# scan_git_repo <repo>: flag commits in the risk window and suspicious strings in
+# HEAD. Detail goes to evidence files; the headline findings are reported.
+scan_git_repo() {
+  local repo="$1" tmplog
+  tmplog="$(mktemp)"
+  if git -C "$repo" log --all --since="2026-05-29" --until="2026-06-06" \
+        --oneline --decorate --stat >"$tmplog" 2>/dev/null && [ -s "$tmplog" ]; then
+    report "[i] Commits during risk window: $repo"
+    cat "$tmplog" >> "$OUT/git-risk-window-commits.txt"
+  fi
+  rm -f "$tmplog"
+  if git -C "$repo" grep -nE "Miasma|Shai-Hulud|SessionStart|folderOpen|setup\.(js|mjs)" \
+        HEAD -- . >>"$OUT/git-suspicious-grep.txt" 2>/dev/null; then
+    report "[!] Suspicious strings in git repo: $repo"
+  fi
+}
+
 report "=== Miasma / Shai-Hulud defensive audit (read-only) ==="
 report "Started: $(date '+%Y-%m-%dT%H:%M:%S%z')"
 report "Root: $ROOT"
@@ -471,18 +508,7 @@ for f in "${CLAUDE_FILES[@]}"; do
   [ -f "$f" ] || continue
   [ -n "${seen_claude[$f]:-}" ] && continue
   seen_claude[$f]=1
-  if grep -EqsI "$MARKERS" "$f" 2>/dev/null; then
-    report "[!!] Worm marker in Claude config (may contain SECRETS): $f"
-    copy_evidence "$f"
-    grep -EnsI "$MARKERS" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
-  elif grep -EqsI "$CLAUDE_DROPPER_RE" "$f" 2>/dev/null; then
-    report "[!] Claude hook/MCP command fetches or executes — review (may contain SECRETS): $f"
-    copy_evidence "$f"
-    grep -EnsI "$CLAUDE_DROPPER_RE|\"command\"" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
-  elif grep -EqsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null; then
-    report "[i] Hooks/MCP configured here — confirm you added them: $f"
-    grep -EnsI "$CLAUDE_PRESENT_RE" "$f" 2>/dev/null | tee -a "$OUT/claude-hook-matches.txt" >/dev/null
-  fi
+  scan_claude_file "$f"
 done
 report ""
 
@@ -537,18 +563,7 @@ if [ "$HAVE_GIT" != "1" ]; then
   report "[i] git not on PATH; skipped local git indicator check."
 else
   while IFS= read -r gitdir; do
-    repo="$(dirname "$gitdir")"
-    tmplog="$(mktemp)"
-    if git -C "$repo" log --all --since="2026-05-29" --until="2026-06-06" \
-          --oneline --decorate --stat >"$tmplog" 2>/dev/null && [ -s "$tmplog" ]; then
-      report "[i] Commits during risk window: $repo"
-      cat "$tmplog" >> "$OUT/git-risk-window-commits.txt"
-    fi
-    rm -f "$tmplog"
-    if git -C "$repo" grep -nE "Miasma|Shai-Hulud|SessionStart|folderOpen|setup\.(js|mjs)" \
-          HEAD -- . >>"$OUT/git-suspicious-grep.txt" 2>/dev/null; then
-      report "[!] Suspicious strings in git repo: $repo"
-    fi
+    scan_git_repo "$(dirname "$gitdir")"
   done < <(find "$ROOT" "${SKIP_OUT[@]}" -type d -name .git -print 2>/dev/null)
 fi
 report ""
