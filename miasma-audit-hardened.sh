@@ -247,6 +247,10 @@ scan_git_repo() {
   fi
 }
 
+# Each numbered section below is one function; main() at the bottom calls them in
+# order, so the script reads as the audit narrative. (Bash needs definitions
+# before use, so helpers sit above and the entry point is the LAST line.)
+audit_header() {
 report "=== Miasma / Shai-Hulud defensive audit (read-only) ==="
 report "Started: $(date '+%Y-%m-%dT%H:%M:%S%z')"
 report "Root: $ROOT"
@@ -257,7 +261,9 @@ miss=""
 [ "$HAVE_STAT" = "1" ] || miss="$miss stat"
 [ -n "$miss" ] && report "[i] Missing tools (related checks downgraded to manual):$miss"
 report ""
+}
 
+discover_projects() {
 # -----------------------------------------------------------------------------
 # 1. Discover JS projects
 # -----------------------------------------------------------------------------
@@ -274,7 +280,9 @@ while IFS= read -r d; do PROJECTS+=("$d"); done < <(
 )
 report "Found ${#PROJECTS[@]} possible JS project(s)."
 report ""
+}
 
+scan_manifest_references() {
 # -----------------------------------------------------------------------------
 # 2. Manifest / lockfile references + version check
 #    Presence is informational; a known-bad VERSION is the real signal.
@@ -331,7 +339,9 @@ for dir in "${PROJECTS[@]+"${PROJECTS[@]}"}"; do
   [ $printed_header -eq 1 ] && report ""
 done
 report ""
+}
 
+npm_ls_check() {
 # -----------------------------------------------------------------------------
 # 2b. Authoritative installed-tree check via `npm ls`  (named in the checklist)
 #     Read-only: `npm ls` / `npm view` never run package lifecycle scripts.
@@ -360,7 +370,9 @@ else
   report "[i] npm not on PATH; skipped. Run 'npm ls <pkg>' manually per the checklist."
 fi
 report ""
+}
 
+publish_date_correlation() {
 # -----------------------------------------------------------------------------
 # 2c. Publish-date correlation: versions PUBLISHED Jun 1 or Jun 3-4 (the waves).
 #     Lockfiles carry no dates, so this asks the registry. Needs network;
@@ -404,7 +416,9 @@ else
   [ "$any_resolved" = "0" ] && report "[i] No affected package resolves in any project lockfile."
 fi
 report ""
+}
 
+implant_scan() {
 # -----------------------------------------------------------------------------
 # 3. Installed-implant scan INSIDE node_modules  (Phantom Gyp / loader)
 #    This is where the real payload lives, so node_modules is NOT pruned here.
@@ -438,7 +452,9 @@ for pkg in "${AFFECTED_PKGS[@]}"; do
   done < <(find "$ROOT" "${SKIP_OUT[@]}" -type d -path "*/node_modules/$pkg" -print 2>/dev/null)
 done
 report ""
+}
 
+worm_marker_scan() {
 # -----------------------------------------------------------------------------
 # 4. On-disk worm marker strings (incl. inside node_modules)
 # -----------------------------------------------------------------------------
@@ -463,7 +479,9 @@ done < <(
   | LC_ALL=C xargs -0 grep -IlE "$MARKERS" /dev/null 2>/dev/null
 )
 report ""
+}
 
+staged_runtime_check() {
 # -----------------------------------------------------------------------------
 # 5. Bun runtime staged in temp + kitty daemon path (high-signal IOCs)
 # -----------------------------------------------------------------------------
@@ -479,7 +497,9 @@ for tmp in "${TMPDIR:-/tmp}" /tmp /var/tmp; do
   done < <(find "$tmp" -maxdepth 2 "${SKIP_OUT[@]}" -name 'kitty-*' -print 2>/dev/null)
 done
 report ""
+}
 
+claude_config_check() {
 # -----------------------------------------------------------------------------
 # 6. Claude config & settings: hooks (esp. SessionStart) and MCP servers.
 #    Covers user-global, per-project, *.local variants, ~/.claude.json, project
@@ -511,7 +531,9 @@ for f in "${CLAUDE_FILES[@]}"; do
   scan_claude_file "$f"
 done
 report ""
+}
 
+vscode_task_check() {
 # -----------------------------------------------------------------------------
 # 7. VS Code folderOpen tasks
 # -----------------------------------------------------------------------------
@@ -525,7 +547,9 @@ while IFS= read -r f; do
   fi
 done < <(find "$ROOT" "${SKIP_OUT[@]}" -path "*/.vscode/tasks.json" -type f -print 2>/dev/null)
 report ""
+}
 
+persistence_name_check() {
 # -----------------------------------------------------------------------------
 # 8. Suspicious persistence file names
 # -----------------------------------------------------------------------------
@@ -538,7 +562,9 @@ done < <(find "$ROOT" "${SKIP_OUT[@]}" \
   -o -type f \( -path "*/.github/setup.js" -o -path "*/.claude/setup.mjs" \) \
   -print 2>/dev/null)
 report ""
+}
 
+workflow_check() {
 # -----------------------------------------------------------------------------
 # 9. GitHub Actions workflows (local view of the OIDC/runner attack surface)
 # -----------------------------------------------------------------------------
@@ -554,7 +580,9 @@ while IFS= read -r f; do
   fi
 done < <(find "$ROOT" "${SKIP_OUT[@]}" -path '*/.github/workflows/*' -type f \( -name '*.yml' -o -name '*.yaml' \) -print 2>/dev/null)
 report ""
+}
 
+git_indicator_check() {
 # -----------------------------------------------------------------------------
 # 10. Local git indicators
 # -----------------------------------------------------------------------------
@@ -567,7 +595,9 @@ else
   done < <(find "$ROOT" "${SKIP_OUT[@]}" -type d -name .git -print 2>/dev/null)
 fi
 report ""
+}
 
+print_summary() {
 # -----------------------------------------------------------------------------
 # Off-host steps this script CANNOT perform — do these manually
 # -----------------------------------------------------------------------------
@@ -604,3 +634,24 @@ else
   report "RESULT: clean of the on-host indicators this script checks (not a guarantee)."
   exit 0
 fi
+}
+
+# Entry point: the audit narrative, top to bottom.
+main() {
+  audit_header
+  discover_projects
+  scan_manifest_references
+  npm_ls_check
+  publish_date_correlation
+  implant_scan
+  worm_marker_scan
+  staged_runtime_check
+  claude_config_check
+  vscode_task_check
+  persistence_name_check
+  workflow_check
+  git_indicator_check
+  print_summary
+}
+
+main "$@"
