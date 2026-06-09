@@ -276,6 +276,20 @@ scan_git_repo() {
   fi
 }
 
+# record_marker_hits <file>: append the markers that matched plus the matching
+# lines (line number + content) to marker-matches.txt, so a [!!] can be triaged
+# from the artifacts without re-grepping. Count and width are capped so a minified
+# bundle or a huge lockfile line can't bloat the evidence file.
+record_marker_hits() {
+  local f="$1"
+  {
+    printf '\n### %s\n' "$f"
+    printf '    markers: '
+    LC_ALL=C grep -oIE "$MARKERS" "$f" 2>/dev/null | sort -u | paste -sd',' -
+    LC_ALL=C grep -nIE "$MARKERS" "$f" 2>/dev/null | head -n 20 | cut -c1-300 | sed 's/^/    /'
+  } >>"$OUT/marker-matches.txt"
+}
+
 # Each numbered section below is one function; main() at the bottom calls them in
 # order, so the script reads as the audit narrative. (Bash needs definitions
 # before use, so helpers sit above and the entry point is the LAST line.)
@@ -501,9 +515,11 @@ worm_marker_scan() {
   # 4. On-disk worm marker strings (incl. inside node_modules)
   # -----------------------------------------------------------------------------
   report "=== Worm marker-string scan ==="
+  local found=0
   while IFS= read -r m; do
     report "[!!] Marker string match: $m"
-    echo "$m" >>"$OUT/marker-matches.txt"
+    record_marker_hits "$m"
+    found=1
     # Drive the file list with find + xargs instead of `grep -r`: BSD/macOS grep
     # crawls every node_modules file and can run for tens of minutes on a large
     # repo tree. node_modules stays in scope (that's where implants land); .git and
@@ -520,6 +536,7 @@ worm_marker_scan() {
       -o -name '*.json' -o -name '*.gyp' \) -size -20000000c -print0 2>/dev/null |
       LC_ALL=C xargs -0 grep -IlE "$MARKERS" /dev/null 2>/dev/null
   )
+  [ "$found" = "1" ] && report "[i] Per-line marker context written to: $OUT/marker-matches.txt"
   report ""
 }
 
